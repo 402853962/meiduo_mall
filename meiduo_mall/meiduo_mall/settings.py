@@ -52,13 +52,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ORIGIN_WHITELIST = (
-    'http://127.0.0.1:8080',
-    'http://localhost:8080',
-    'http://www.meiduo.site:8080',
-    'http://www.meiduo.site:8000'
-)
-CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'meiduo_mall.urls'
 
@@ -198,3 +191,12 @@ LOGGING = {
 
 #自定义模型覆盖系统原有模型
 AUTH_USER_MODEL = 'users.User'
+
+CORS_ORIGIN_WHITELIST = (
+    'http://127.0.0.1:8080',
+    'http://localhost:8080',
+    'http://www.meiduo.site:8080',
+    'http://www.meiduo.site:8000'
+)
+
+CORS_ALLOW_CREDENTIALS = True

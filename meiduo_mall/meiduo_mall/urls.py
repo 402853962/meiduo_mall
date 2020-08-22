@@ -15,21 +15,11 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path,include
-from utils.converters import UsernameConverter
+from utils.converters import UsernameConverter,MobileConverter
 from django.urls import register_converter
-# import logging
-# from django.http import HttpResponse
-#
-# def index(request):
-#     # 创建日志记录器
-#     logger = logging.getLogger('django')
-#     # 输出日志
-#     logger.debug('测试logging模块debug')
-#     logger.info('测试logging模块info')
-#     logger.error('测试logging模块error')
-#     return HttpResponse('ok')
 
 register_converter(UsernameConverter,'username')
+register_converter(MobileConverter,'mobile')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
