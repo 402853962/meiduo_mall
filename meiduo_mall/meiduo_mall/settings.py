@@ -184,3 +184,7 @@ LOGGING = {
         },
     }
 }
+
+
+#自定义模型覆盖系统原有模型
+AUTH_USER_MODEL = 'users.User'
