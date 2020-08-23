@@ -9,3 +9,9 @@ class MobileConverter:
 
     def to_python(self,value):
         return str(value)
+
+class ImageConverter:
+    regex = '[\w]{8}-[\w]{4}-[\w]{4}-[\w]{4}-[\w]{12}'
+
+    def to_python(self,value):
+        return str(value)
