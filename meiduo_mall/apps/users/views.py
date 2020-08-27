@@ -2,6 +2,7 @@ from django.shortcuts import render
 from django.views import View
 from apps.users.models import User
 from django.http import JsonResponse
+from django_redis import get_redis_connection
 import json
 import re
 # Create your views here.
@@ -50,6 +51,18 @@ class RegisterView(View):
             return JsonResponse({'code': 400, 'errmsg': '两次密码不相等!'})
         if allow != True:
             return JsonResponse({'code': 400, 'errmsg': 'allow格式有误!'})
+# 验证短信验证码逻辑:
+# 1.获取用户输入的code
+# 2.从redis中获取保存的sms_code
+# 3.对比是否一致，code是否过期，返回json
+        sms_code = request.POST.get('sms_code')
+        redis_conn = get_redis_connection('code')
+        sms_code_server = redis_conn.get('key')
+        if not sms_code_server:
+            return JsonResponse({'code':400, 'errmsg':'短信验证码已过期！'})
+        if sms_code != sms_code_server.decode():
+            return JsonResponse({'code':400, 'errmsg':'短信验证码不一致！'})
+
 
         user = User.objects.create_user(username=username,password=password,mobile=mobile)
         #状态保持session技术

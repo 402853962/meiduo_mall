@@ -52,12 +52,24 @@ class SmsCodeView(View):
 
         redis_cli.delete(image_code_id)
 
+        send_flag = redis_cli.get('send_flag_%s'%mobile)
+        if send_flag:
+            return JsonResponse({'code':400, 'errmsg':'短信申请频繁！'})
+
         from random import randint
         sms_code = '%06d' % randint(0,999999)
-        redis_cli.setex(mobile,300,sms_code)
+
+        pipeline = redis_cli.pipeline()
+
+
+        pipeline.setex(mobile,300,sms_code)
 
         from libs.yuntongxun.sms import CCP
         ccp = CCP()
         # 注意： 测试的短信模板编号为1
         ccp.send_template_sms(mobile, [sms_code, 5], 1)
+
+        pipeline.setex('send_flag_%s'%mobile,60,1)
+        pipeline.excute()
+
         return JsonResponse({'code':0,'errmsg':'ok'})
