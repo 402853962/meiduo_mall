@@ -18,7 +18,7 @@ class ImageCodeView(View):
         text,image = captcha.generate_captcha()
 
         redis_conn = get_redis_connection('code')
-        redis_conn.setex = (key,300,text)
+        redis_conn.setex(key,300,text)
 
         return HttpResponse(image,content_type='image/jpeg')
 
@@ -64,10 +64,13 @@ class SmsCodeView(View):
 
         pipeline.setex(mobile,300,sms_code)
 
-        from libs.yuntongxun.sms import CCP
-        ccp = CCP()
+        # from libs.yuntongxun.sms import CCP
+        # ccp = CCP()
         # 注意： 测试的短信模板编号为1
-        ccp.send_template_sms(mobile, [sms_code, 5], 1)
+
+        from celery_tasks.sms.tasks import celery_send_sms
+
+        celery_send_sms.delay(mobile,sms_code)
 
         pipeline.setex('send_flag_%s'%mobile,60,1)
         pipeline.excute()

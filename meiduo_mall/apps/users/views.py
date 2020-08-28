@@ -70,3 +70,61 @@ class RegisterView(View):
         login(request,user)
 
         return JsonResponse({'code':0,'errmsg':'注册成功！'})
+
+
+# 登录视图
+class LoginView(View):
+    def post(self,request):
+        json_info = request.body.decode()
+        json_dict = json.loads(json_info)
+        username = json_dict.get('username')
+        password = json_dict.get('password')
+        remembered = json_dict.get('remembered')
+        if not all([username,password]):
+            return JsonResponse({'code':400, 'errmsg':'参数不全！'})
+
+        from django.contrib.auth import authenticate,login
+        if re.match('1[3-9]\d{9}',username):
+            User.USERNAME_FIELD='mobile'
+        else:
+            User.USERNAME_FIELD='username'
+
+        user = authenticate(username=username,password=password)
+        if user is None:
+            return JsonResponse({'code':400, 'errmsg':'用户名或密码不正确'})
+
+        login(request,user)
+        if remembered:
+            request.session.set_expiry(None)
+        else:
+            request.session.set_expiry(0)
+
+        response = JsonResponse({'code':0,'errmsg':'ok'})
+        response.set_cookie('username',user.username,max_age=14*24*60*60)
+
+        return response
+
+# 退出登录视图
+class LogoutView(View):
+    def delete(self,request):
+        from django.contrib.auth import logout
+        logout(request)
+
+        response = JsonResponse({'code':0, 'errmsg':'ok'})
+        response.delete_cookie('username')
+        return response
+
+
+#用户中心
+# from django.contrib.auth.mixins import LoginRequiredMixin
+from utils.views import LoginRequiredJsonMixin
+class UserCenterView(LoginRequiredJsonMixin,View):
+    def get(self,request):
+        info_data = {
+            'username' : request.user.username,
+            'mobile' : request.user.mobile,
+            'email' : request.user.email,
+            'email_active' : False,
+        }
+
+        return JsonResponse({'code':0,'info_data':info_data})
