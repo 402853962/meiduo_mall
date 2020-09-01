@@ -124,7 +124,272 @@ class UserCenterView(LoginRequiredJsonMixin,View):
             'username' : request.user.username,
             'mobile' : request.user.mobile,
             'email' : request.user.email,
-            'email_active' : False,
+            'email_active' : request.user.email_active,
         }
 
-        return JsonResponse({'code':0,'info_data':info_data})
+        return JsonResponse({'code':0,'errmsg':'ok','info_data':info_data})
+
+from utils.views import LoginRequiredJsonMixin
+class EmailView(LoginRequiredJsonMixin,View):
+    def put(self,request):
+        data = json.loads(request.body.decode())
+        email = data.get('email')
+        if not email:
+            return JsonResponse({'code': 400, 'errmsg': '缺少email参数'})
+        if not re.match(r'^[a-z0-9][\w\.\-]*@[a-z0-9\-]+(\.[a-z]{2,5}){1,2}$', email):
+            return JsonResponse({'code': 400, 'errmsg': '参数email有误'})
+
+        request.user.email = email
+        request.user.save()
+
+        # from django.core.mail import send_mail
+        # subject='wzx测试邮件'
+        # message='测试测试测试'
+        # from_email='qi_rui_hua@163.com'
+        # recipient_list=[email]
+        #
+        # from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
+        # from meiduo_mall import settings
+        # s = Serializer(secret_key=settings.SECRET_KEY, expires_in=24*60*60)
+        # toekn = s.dumps({
+        #     'id':request.user.id,
+        #     'email':email
+        # })
+        # from apps.users.utils import generic_email_access_token
+        # access_token=generic_email_access_token(request.user.id,email)
+        # verify_url = 'http://www.meiduo.site:8080/success_verify_email.html/?token=%s'%access_token
+        # html_message= '<a href="http://www.meiduo.site/?user_id=1">点我激活</a>'
+        # send_mail(subject, message, from_email, recipient_list, html_message)
+
+        from apps.users.utils import generic_email_access_token
+        access_token=generic_email_access_token(request.user.id,email)
+
+        from celery_tasks.email.tasks import celery_send_mail
+        celery_send_mail.delay(email,access_token)
+
+        return JsonResponse({'code':0, 'errmsg':'邮件保存成功！'})
+
+class EmailVerificationView(View):
+    def put(self,request):
+        token = request.GET.get('token')
+        if token is None:
+            return JsonResponse({'code':400, 'errmsg':'缺少必要参数'})
+        from apps.users.utils import check_email_token
+        data = check_email_token(token)
+        if data is None:
+            return JsonResponse({'code':400, 'errmsg':'缺少必要参数'})
+
+        user_id = data.get('id')
+        email = data.get('email')
+
+        try:
+            user=User.objects.get(id=user_id,email=email)
+        except User.DoesNotExist:
+            return JsonResponse({'code':400, 'errmsg':'用户名不存在'})
+
+        user.email_active=True
+        user.save()
+
+        return JsonResponse({'code':0 ,'errmsg':'ok'})
+
+from apps.users.models import Address
+from utils.views import LoginRequiredJsonMixin
+class AddressCreateView(LoginRequiredJsonMixin,View):
+    def post(self,request):
+        json_dict = json.loads(request.body.decode())
+        receiver = json_dict.get('receiver')
+        province_id = json_dict.get('province_id')
+        city_id = json_dict.get('city_id')
+        district_id = json_dict.get('district_id')
+        place = json_dict.get('place')
+        mobile = json_dict.get('mobile')
+        tel = json_dict.get('tel')
+        email = json_dict.get('email')
+
+        address = Address.objects.create(
+            user=request.user,
+            title=receiver,
+            receiver=receiver,
+            province_id=province_id,
+            city_id=city_id,
+            district_id=district_id,
+            place=place,
+            mobile=mobile,
+            tel=tel,
+            email=email
+        )
+
+        if not all([receiver, province_id, city_id, district_id, place, mobile]):
+            return JsonResponse({'code':400,'errmsg':'参数不全'})
+        if not re.match(r'^1[3-9]\d{9}$', mobile):
+            return JsonResponse({'code':400,'errmsg':'参数mobile有误'})
+        if tel:
+            if not re.match(r'^(0[0-9]{2,3}-)?([2-9][0-9]{6,7})+(-[0-9]{1,4})?$', tel):
+                return JsonResponse({'code': 400, 'errmsg': '参数tel有误'})
+        if email:
+            if not re.match(r'^[a-z0-9][\w\.\-]*@[a-z0-9\-]+(\.[a-z]{2,5}){1,2}$', email):
+                return JsonResponse({'code': 400, 'errmsg': '参数email有误'})
+
+        if not request.user.default_address:
+            request.user.default_address=address
+            request.user.save()
+
+        address_dict = {
+            "id": address.id,
+            "title": address.title,
+            "receiver": address.receiver,
+            "province": address.province.name,
+            "city": address.city.name,
+            "district": address.district.name,
+            "place": address.place,
+            "mobile": address.mobile,
+            "tel": address.tel,
+            "email": address.email
+        }
+
+        return JsonResponse({'code':0,'errmsg':'ok','address':address_dict})
+
+class AddressesView(LoginRequiredJsonMixin,View):
+    def get(self,request):
+        addresses = Address.objects.filter(user=request.user,is_deleted=False)
+        addresses.dict = []
+        for address in addresses:
+            addresses.dict.append({
+                "id": address.id,
+                "title": address.title,
+                "receiver": address.receiver,
+                "province": address.province.name,
+                "city": address.city.name,
+                "district": address.district.name,
+                "place": address.place,
+                "mobile": address.mobile,
+                "tel": address.tel,
+                "email": address.email
+            })
+
+        return JsonResponse({'code':0,'errmsg':'ok','addresses':addresses.dict})
+
+# 修改地址
+# 1.获取用户信息
+# 2.校验信息，齐全？电话？固定电话？邮箱？
+# 3.update信息
+# 4.返回新的dict
+
+class VerifyAddressView(LoginRequiredJsonMixin,View):
+    def put(self,request,address_id):
+        json_dict = json.loads(request.body.decode())
+        receiver = json_dict.get('receiver')
+        province_id = json_dict.get('province_id')
+        city_id = json_dict.get('city_id')
+        district_id = json_dict.get('district_id')
+        place = json_dict.get('place')
+        mobile = json_dict.get('mobile')
+        tel = json_dict.get('tel')
+        email = json_dict.get('email')
+
+        if not all([receiver,province_id,city_id,district_id,place,mobile,tel,email]):
+            return JsonResponse({'code':400,'errmsg':'参数不全'})
+
+        if not re.match(r'^1[3-9]\d{9}$', mobile):
+            return JsonResponse({'code':400, 'errmsg':'电话参数有误'})
+
+        if not re.match(r'^(0[0-9]{2,3}-)?([2-9][0-9]{6,7})+(-[0-9]{1,4})?$',tel):
+            return JsonResponse({'code':400, 'errmsg':'固定电话参数有误'})
+
+        if not re.match(r'^[a-z0-9][\w\.\-]*@[a-z0-9\-]+(\.[a-z]{2,5}){1,2}$', email):
+            return JsonResponse({'code':400, 'errmsg':'邮箱地址有误'})
+
+        Address.objects.filter(id=address_id).update(
+            user=request.user,
+            title=receiver,
+            receiver=receiver,
+            province_id=province_id,
+            city_id=city_id,
+            district_id=district_id,
+            place=place,
+            mobile=mobile,
+            tel=tel,
+            email=email
+        )
+
+        address = Address.objects.get(id=address_id)
+        address_dict = {
+            "id": address.id,
+            "title": address.title,
+            "receiver": address.receiver,
+            "province": address.province.name,
+            "city": address.city.name,
+            "district": address.district.name,
+            "place": address.place,
+            "mobile": address.mobile,
+            "tel": address.tel,
+            "email": address.email
+        }
+
+        return JsonResponse({'code':0,'errmsg':'ok','address':address_dict})
+
+    def delete(self,request,address_id):
+        address = Address.objects.get(id=address_id)
+
+        address.is_deleted = True
+        address.save()
+
+        return JsonResponse({'code':0,'errmsg':'ok'})
+
+class DefaultSetView(LoginRequiredJsonMixin,View):
+    def put(self,request,address_id):
+        address = Address.objects.get(id=address_id)
+        request.user.default_address=address
+        request.user.save()
+
+
+        return JsonResponse({'code':0,'errmsg':'ok'})
+
+class TitleSetView(LoginRequiredJsonMixin,View):
+    def put(self,request,address_id):
+        address=Address.objects.get(id=address_id)
+        json_dict=json.loads(request.body.decode())
+        title=json_dict.get('title')
+
+        address.title = title
+        address.save()
+
+        return JsonResponse({'code':0,'errmsg':'ok'})
+
+from apps.goods.models import SKU
+from django_redis import get_redis_connection
+class UserHistoryView(LoginRequiredJsonMixin,View):
+    def post(self,request):
+        data = json.loads(request.body.decode())
+        sku_id=data.get('sku_id')
+
+        try:
+            SKU.objects.get(id=sku_id)
+        except SKU.DoesNotExist:
+            return JsonResponse({'code':400,'errmsg':'商品不存在'})
+
+        redis_cli=get_redis_connection('history')
+        pl = redis_cli.pipeline()
+        pl.lrem('history_%s'%request.user.id,0,sku_id)
+        pl.lpush('history_%s'%request.user.id,sku_id)
+        pl.ltrim('history_%s'%request.user.id,0,4)
+        pl.execute()
+
+        return JsonResponse({'code':0,'errmsg':'ok'})
+
+    def get(self,request):
+        user=request.user
+        redis_cli=get_redis_connection('history')
+        sku_ids=redis_cli.lrange('history_%s'%user.id,0,-1)
+
+        sku_list=[]
+        for sku_id in sku_ids:
+            sku = SKU.objects.get(id=sku_id)
+            sku_list.append({
+                'id': sku.id,
+                'name': sku.name,
+                'default_image_url': sku.default_image.url,
+                'price': sku.price
+            })
+
+        return JsonResponse({'code': 0, 'errmsg': 'OK', 'skus': sku_list})
