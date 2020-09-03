@@ -31,7 +31,8 @@ class CartView(View):
         user=request.user
         if user.is_authenticated:
             redis_cli = get_redis_connection('carts')
-            redis_cli.hset('carts_%s'%user.id,sku_id,count)
+            # redis_cli.hset('carts_%s'%user.id,sku_id,count)
+            redis_cli.hincrby('carts_%s'%user.id,sku_id,count)
             redis_cli.sadd('selected_%s'%user.id,sku_id)
 
             return JsonResponse({'code':0,'errmsg':'ok'})
@@ -66,8 +67,8 @@ class CartView(View):
             sku_id_counts=redis_cli.hgetall('carts_%s'%user.id)
             carts={}
             for sku_id,count in sku_id_counts.items():
-                carts[sku_id]={
-                    'count':count,
+                carts[int(sku_id)]={
+                    'count':int(count),
                     'selected':sku_id in selected_ids
                 }
 
@@ -117,7 +118,7 @@ class CartView(View):
         user=request.user
         if user.is_authenticated:
             redis_cli=get_redis_connection('carts')
-            redis_cli.hset('cats_%s'%user.id,sku_id,count)
+            redis_cli.hset('carts_%s'%user.id,sku_id,count)
             if selected:
                 redis_cli.sadd('selected_%s'%user.id,sku_id)
             else:
@@ -133,7 +134,7 @@ class CartView(View):
                 'amount': sku.price * count,
             }
 
-            return JsonResponse({'code':0,'errmsg':'ok','count':count})
+            return JsonResponse({'code':0,'errmsg':'ok','cart_sku':cart_sku})
         else:
             cookie_cart=request.COOKIES.get('carts')
             if cookie_cart is not None:
@@ -148,15 +149,6 @@ class CartView(View):
 
             base64_carts = base64.b64encode(pickle.dumps(carts))
 
-            cart_sku = {
-                'id': sku_id,
-                'count': count,
-                'selected': selected,
-                'name': sku.name,
-                'default_image_url': sku.default_image.url,
-                'price': sku.price,
-                'amount': sku.price * count,
-            }
 
             response= JsonResponse({'code':0,'errmsg':'ok','count':count})
             response.set_cookie('carts',base64_carts.decode(),max_age=14*24*3600)
@@ -175,7 +167,7 @@ class CartView(View):
         if user.is_authenticated:
             redis_cli=get_redis_connection('carts')
             redis_cli.hdel('carts_%s'%user.id,sku_id)
-            redis_cli.srem('selected_%s'%user.id)
+            redis_cli.srem('selected_%s'%user.id,sku_id)
 
             return JsonResponse({'code':0,'errmsg':'ok'})
         else:
@@ -193,3 +185,4 @@ class CartView(View):
 
             response.set_cookie('carts',base64_carts.decode(),max_age=14*24*3600)
             return response
+
