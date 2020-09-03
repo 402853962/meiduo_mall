@@ -86,10 +86,110 @@ class CartView(View):
                 'id': sku.id,
                 'name': sku.name,
                 'count': carts.get(sku.id).get('count'),
-                'selected': str(carts.get(sku.id).get('selected')),  # 将True，转'True'，方便json解析
+                'selected': carts.get(sku.id).get('selected'),  # 将True，转'True'，方便json解析
                 'default_image_url': sku.default_image.url,
                 'price': str(sku.price),  # 从Decimal('10.2')中取出'10.2'，方便json解析
                 'amount': str(sku.price * carts.get(sku.id).get('count')),
             })
 
         return JsonResponse({'code':0,'errmsg':'ok','cart_skus':sku_list})
+
+    def put(self,request):
+        data=json.loads(request.body.decode())
+        sku_id=data.get('sku_id')
+        count=data.get('count')
+        selected=data.get('selected')
+
+        # 判断参数是否齐全
+        if not all([sku_id, count]):
+            return JsonResponse({'code':400,'errmsg':'缺少必传参数'})
+        # 判断sku_id是否存在
+        try:
+            sku = SKU.objects.get(id=sku_id)
+        except SKU.DoesNotExist:
+            return JsonResponse({'code':400,'errmsg':'商品sku_id不存在'})
+        # 判断count是否为数字
+        try:
+            count = int(count)
+        except Exception:
+            return JsonResponse({'code':400,'errmsg':'参数count有误'})
+
+        user=request.user
+        if user.is_authenticated:
+            redis_cli=get_redis_connection('carts')
+            redis_cli.hset('cats_%s'%user.id,sku_id,count)
+            if selected:
+                redis_cli.sadd('selected_%s'%user.id,sku_id)
+            else:
+                redis_cli.srem('selected_%s'%user.id,sku_id)
+
+            cart_sku = {
+                'id': sku_id,
+                'count': count,
+                'selected': selected,
+                'name': sku.name,
+                'default_image_url': sku.default_image.url,
+                'price': sku.price,
+                'amount': sku.price * count,
+            }
+
+            return JsonResponse({'code':0,'errmsg':'ok','count':count})
+        else:
+            cookie_cart=request.COOKIES.get('carts')
+            if cookie_cart is not None:
+                carts=pickle.loads(base64.b64decode(cookie_cart))
+            else:
+                carts={}
+            if sku_id in carts:
+                carts[sku_id]={
+                    'count':count,
+                    'selected':selected
+                }
+
+            base64_carts = base64.b64encode(pickle.dumps(carts))
+
+            cart_sku = {
+                'id': sku_id,
+                'count': count,
+                'selected': selected,
+                'name': sku.name,
+                'default_image_url': sku.default_image.url,
+                'price': sku.price,
+                'amount': sku.price * count,
+            }
+
+            response= JsonResponse({'code':0,'errmsg':'ok','count':count})
+            response.set_cookie('carts',base64_carts.decode(),max_age=14*24*3600)
+            return response
+
+    def delete(self,request):
+        data=json.loads(request.body.decode())
+        sku_id=data.get('sku_id')
+     # 判断sku_id是否存在
+        try:
+            sku=SKU.objects.get(id=sku_id)
+        except SKU.DoesNotExist:
+            return JsonResponse({'code':400,'errmsg':'商品不存在'})
+
+        user=request.user
+        if user.is_authenticated:
+            redis_cli=get_redis_connection('carts')
+            redis_cli.hdel('carts_%s'%user.id,sku_id)
+            redis_cli.srem('selected_%s'%user.id)
+
+            return JsonResponse({'code':0,'errmsg':'ok'})
+        else:
+            carts_cookie=request.COOKIES.get('carts')
+            if carts_cookie is not None:
+                carts=pickle.loads(base64.b64decode(carts_cookie))
+            else:
+                carts={}
+
+            if sku_id in carts:
+                del carts[sku_id]
+
+            base64_carts=base64.b64encode(pickle.dumps(carts))
+            response=JsonResponse({'code':0,'errmsg':'ok'})
+
+            response.set_cookie('carts',base64_carts.decode(),max_age=14*24*3600)
+            return response
