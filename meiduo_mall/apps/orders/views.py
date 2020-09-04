@@ -59,11 +59,11 @@ class SettlementView(LoginRequiredJsonMixin,View):
 class CommentView(LoginRequiredJsonMixin,View):
     def post(self,request):
         # 一。接收数据
-        data=json.loads(request.body.docode())
+        data=json.loads(request.body.decode())
         # 地址id
         address_id=data.get('address_id')
         # 支付方式
-        pay_method=data.get('pay_mathod')
+        pay_method=data.get('pay_method')
         # 二。验证数据
         if not all([address_id,pay_method]):
             return JsonResponse({'code':400,'errmsg':'参数不全'})
@@ -139,5 +139,8 @@ class CommentView(LoginRequiredJsonMixin,View):
         #     3. 更新订单总价格和总数量
         order.save()
         #     4. 删除redis中选中的数据
+        redis_cli.hdel('carts_%s'%user.id,*ids)
+        redis_cli.srem('selected_%s'%user.id,*ids)
+
         # 四。返回响应
         return JsonResponse({'code':0,'errmsg':'ok','order_id':order.order_id})
