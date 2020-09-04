@@ -10,6 +10,7 @@ from apps.users.models import Address
 from django_redis import get_redis_connection
 from django.utils import timezone
 from decimal import Decimal
+from django.db import transaction
 
 import json
 
@@ -91,53 +92,59 @@ class CommentView(LoginRequiredJsonMixin,View):
         else:
             status=OrderInfo.ORDER_STATUS_ENUM['UNPAID']
 
-        order = OrderInfo.objects.create(
-            order_id=order_id,
-            user=user,
-            address=address,
-            total_count=total_count,
-            total_amount=total_price,
-            freight=freight,
-            pay_method=pay_method,
-            status=status
-        )
-        #     2.OrderGoods -- 订单商品信息
-        #         2.1 连接redis
-        redis_cli=get_redis_connection('carts')
-        #         2.2 获取hash
-        sku_id_counts=redis_cli.hgetall('carts_%s'%user.id)
-        #         2.3 获取set数据 -- 选中的id
-        sku_selected=redis_cli.smembers('selected_%s'%user.id)
-        #         2.4 遍历选中的商品id
-        selected_carts={}
-        for sku_id in sku_selected:
-            selected_carts[int(sku_id)]=int(sku_id_counts[sku_id])
 
-        ids=selected_carts.keys()
-        for id in ids:
-        #         2.5 根据商品id查询商品信息
-            sku = SKU.objects.get(id=id)
-            custom_count = selected_carts[id]
-        #         2.6 判断库存是否充足
-            if custom_count>sku.stock:
-                return JsonResponse({'code':400,'errmsg':'库存不足'})
-        #         2.7 如果充足，减少库存，增加销量
-            else:
-                sku.stock -= custom_count
-                sku.sales += custom_count
-                sku.save()
-        #         2.8 保存订单商品信息
-            OrderGoods.objects.create(
-                order=order,
-                sku=sku,
-                count=custom_count,
-                price=sku.price
+        with transaction.atomic():
+            start_transaction=transaction.savepoint()
+            order = OrderInfo.objects.create(
+                order_id=order_id,
+                user=user,
+                address=address,
+                total_count=total_count,
+                total_amount=total_price,
+                freight=freight,
+                pay_method=pay_method,
+                status=status
             )
-        #         2.9 计算 订单的价格和总数量
-            order.total_count+=custom_count
-            order.total_amount+=(custom_count*sku.price)
-        #     3. 更新订单总价格和总数量
-        order.save()
+            #     2.OrderGoods -- 订单商品信息
+            #         2.1 连接redis
+            redis_cli=get_redis_connection('carts')
+            #         2.2 获取hash
+            sku_id_counts=redis_cli.hgetall('carts_%s'%user.id)
+            #         2.3 获取set数据 -- 选中的id
+            sku_selected=redis_cli.smembers('selected_%s'%user.id)
+            #         2.4 遍历选中的商品id
+            selected_carts={}
+            for sku_id in sku_selected:
+                selected_carts[int(sku_id)]=int(sku_id_counts[sku_id])
+
+            ids=selected_carts.keys()
+            for id in ids:
+            #         2.5 根据商品id查询商品信息
+                sku = SKU.objects.get(id=id)
+                custom_count = selected_carts[id]
+            #         2.6 判断库存是否充足
+                if custom_count>sku.stock:
+                    transaction.savepoint_rollback(start_transaction)
+                    return JsonResponse({'code':400,'errmsg':'库存不足'})
+            #         2.7 如果充足，减少库存，增加销量
+                else:
+                    sku.stock -= custom_count
+                    sku.sales += custom_count
+                    sku.save()
+            #         2.8 保存订单商品信息
+                OrderGoods.objects.create(
+                    order=order,
+                    sku=sku,
+                    count=custom_count,
+                    price=sku.price
+                )
+            #         2.9 计算 订单的价格和总数量
+                order.total_count+=custom_count
+                order.total_amount+=(custom_count*sku.price)
+            #     3. 更新订单总价格和总数量
+            order.save()
+            transaction.savepoint_commit(start_transaction)
+
         #     4. 删除redis中选中的数据
         redis_cli.hdel('carts_%s'%user.id,*ids)
         redis_cli.srem('selected_%s'%user.id,*ids)
