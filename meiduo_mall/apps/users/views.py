@@ -100,6 +100,10 @@ class LoginView(View):
             request.session.set_expiry(0)
 
         response = JsonResponse({'code':0,'errmsg':'ok'})
+
+        from apps.carts.utils import merge_cookie_to_redis
+        response=merge_cookie_to_redis(request,response)
+
         response.set_cookie('username',user.username,max_age=14*24*60*60)
 
         return response

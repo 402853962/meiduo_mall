@@ -214,5 +214,40 @@ class CartShowAll(View):
                 response.set_cookie('carts',base64_carts.decode(),max_age=14*24*3600)
                 return response
 
+class CartSimpleView(View):
+    def get(self,request):
+        user=request.user
+        if user.is_authenticated:
+            redis_cli=get_redis_connection('carts')
+            sku_id_counts=redis_cli.hgetall('carts_%s'%user.id)
+            sku_selected=redis_cli.smembers('selected_%s'%user.id)
+
+            carts_dict={}
+            for sku_id,count in sku_id_counts.items():
+                carts_dict[int(sku_id)]={
+                    'count':int(count),
+                    'selected':sku_id in sku_selected
+                }
+        else:
+            carts_cookies=request.COOKIES.get('carts')
+            if carts_cookies is not None:
+                carts_dict=pickle.loads(base64.b64decode(carts_cookies))
+            else:
+                carts_dict={}
+
+
+        carts_sku=[]
+        sku_ids= carts_dict.keys()
+        skus=SKU.objects.filter(id__in=sku_ids)
+        for sku in skus:
+            carts_sku.append({
+                'id': sku.id,
+                'name': sku.name,
+                'count': carts_dict.get(sku.id).get('count'),
+                'default_image_url': sku.default_image.url
+            })
+
+        return JsonResponse({'code':0, 'errmsg':'OK', 'cart_skus':carts_sku})
+
 
 
