@@ -119,28 +119,41 @@ class CommentView(LoginRequiredJsonMixin,View):
 
             ids=selected_carts.keys()
             for id in ids:
+
+                while True:
             #         2.5 根据商品id查询商品信息
-                sku = SKU.objects.get(id=id)
-                custom_count = selected_carts[id]
-            #         2.6 判断库存是否充足
-                if custom_count>sku.stock:
-                    transaction.savepoint_rollback(start_transaction)
-                    return JsonResponse({'code':400,'errmsg':'库存不足'})
-            #         2.7 如果充足，减少库存，增加销量
-                else:
-                    sku.stock -= custom_count
-                    sku.sales += custom_count
-                    sku.save()
-            #         2.8 保存订单商品信息
-                OrderGoods.objects.create(
-                    order=order,
-                    sku=sku,
-                    count=custom_count,
-                    price=sku.price
-                )
-            #         2.9 计算 订单的价格和总数量
-                order.total_count+=custom_count
-                order.total_amount+=(custom_count*sku.price)
+                    sku = SKU.objects.get(id=id)
+                    custom_count = selected_carts[id]
+                #         2.6 判断库存是否充足
+                    if custom_count>sku.stock:
+                        transaction.savepoint_rollback(start_transaction)
+                        return JsonResponse({'code':400,'errmsg':'库存不足'})
+                #         2.7 如果充足，减少库存，增加销量
+                #     else:
+                        # sku.stock -= custom_count
+                        # sku.sales += custom_count
+                        # sku.save()
+                    old_stock = sku.stock
+                    result=SKU.objects.filter(id=id,stock=old_stock).update(
+                        stock=sku.stock-custom_count,
+                        sales=sku.sales+custom_count
+                    )
+
+                    if result == 0:
+                        continue
+                        # transaction.savepoint_rollback(start_transaction)
+                        # return JsonResponse({'code':400,'errmsg':'下单失败'})
+
+                #         2.8 保存订单商品信息
+                    OrderGoods.objects.create(
+                        order=order,
+                        sku=sku,
+                        count=custom_count,
+                        price=sku.price
+                    )
+                #         2.9 计算 订单的价格和总数量
+                    order.total_count+=custom_count
+                    order.total_amount+=(custom_count*sku.price)
             #     3. 更新订单总价格和总数量
             order.save()
             transaction.savepoint_commit(start_transaction)
