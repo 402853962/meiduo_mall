@@ -46,7 +46,14 @@ INSTALLED_APPS = [
     'apps.goods',
     'haystack',  # 全文检索
     'apps.carts',
-    'apps.orders'
+    'apps.orders',
+    'apps.payment',
+    'django_crontab',
+]
+
+CRONJOBS = [
+    # 每1分钟生成一次首页静态文件
+    ('*/1 * * * *', 'apps.contents.crons.generic_index_html', '>> ' + os.path.join(BASE_DIR, 'logs/crontab.log'))
 ]
 
 MIDDLEWARE = [
@@ -266,4 +273,11 @@ HAYSTACK_CONNECTIONS = {
 # HAYSTACK_SIGNAL_PROCESSOR = 'haystack.signals.RealtimeSignalProcessor'
 
 HAYSTACK_SEARCH_RESULTS_PER_PAGE = 2
+
+ALIPAY_APPID = '2021000116699037'
+ALIPAY_DEBUG = True
+ALIPAY_URL = 'https://openapi.alipaydev.com/gateway.do'
+ALIPAY_RETURN_URL = 'http://www.meiduo.site:8080/pay_success.html'
+APP_PRIVATE_KEY_PATH = os.path.join(BASE_DIR, 'apps/payment/keys/app_private_key.pem')
+ALIPAY_PUBLIC_KEY_PATH = os.path.join(BASE_DIR, 'apps/payment/keys/alipay_public_key.pem')
 
